@@ -39,9 +39,11 @@ else:
     after = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
 parser.add_argument("-a", "--after", default=after)
 
+parser.add_argument("-q", "--query", type=str)
+
 args = parser.parse_args()
 
-client = chromadb.PersistentClient(path=data_path, settings=Settings(anonymized_telemetry=False))
+client = chromadb.PersistentClient(path=args.data_path, settings=Settings(anonymized_telemetry=False))
 collection = client.get_or_create_collection(name=args.collection)
 
 pathlist = Path(args.directory).rglob("htmltotext.txt")
@@ -50,7 +52,7 @@ for file in pathlist:
     index_file_path = os.path.join(file_dir, "index.json")
     index_modified_time = datetime.fromtimestamp(os.path.getmtime(index_file_path), tz=timezone.utc)
 
-    if index_modified_time < after:
+    if index_modified_time < args.after:
         continue
 
     index_file = open(index_file_path, "r")
