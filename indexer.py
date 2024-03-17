@@ -1,12 +1,18 @@
 import argparse
-import chromadb
 import json
 import os
 import yaml
 
 from chromadb.config import Settings
+from chromadb import PersistentClient
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+from langchain_community.embeddings.sentence_transformer import (
+    SentenceTransformerEmbeddings
+)
+from langchain_community.document_loaders import TextLoader
+from langchain_community.vectorstores.chroma import Chroma
+from langchain_text_splitters import SentenceTransformersTokenTextSplitter
 from pathlib import Path
 from xdg_base_dirs import xdg_data_home, xdg_state_home
 
@@ -39,12 +45,17 @@ else:
     after = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
 parser.add_argument("-a", "--after", default=after)
 
-parser.add_argument("-q", "--query", type=str)
-
 args = parser.parse_args()
 
-client = chromadb.PersistentClient(path=args.data_path, settings=Settings(anonymized_telemetry=False))
+client = PersistentClient(path=args.data_path, settings=Settings(anonymized_telemetry=False))
+embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 collection = client.get_or_create_collection(name=args.collection)
+
+vectorstore = Chroma(
+    client=client,
+    collection_name=args.collection,
+    embedding_function=embedding_function
+)
 
 pathlist = Path(args.directory).rglob("htmltotext.txt")
 for file in pathlist:
@@ -57,13 +68,21 @@ for file in pathlist:
 
     index_file = open(index_file_path, "r")
     index = json.load(index_file)
-    with file.open() as f:
-        collection.upsert(
-            ids=[index["hash"]],
-            documents=[f.read()],
-            metadatas=[{"website": index["base_url"], "domain": index["domain"]}]
-        )
+
+    print(f'Processing {file}')
+    raw_documents = TextLoader(str(file)).load()
+    text_splitter = SentenceTransformersTokenTextSplitter(chunk_overlap=50, model_name="all-MiniLM-L6-v2")
+    documents = text_splitter.split_documents(raw_documents)
+
+    for d in documents:
+        d.metadata['website'] = index['base_url']
+        d.metadata['domain'] = index['domain']
+
+    try:
+        vectorstore.add_documents(documents)
+    except Exception as e:
+        print(f'Failed to process {file}\n', e)
 
 config['last_scan_time'] = START_TIME
 with open(CONFIG_FILE_PATH, "a+") as config_file:
-    yaml.safe_dump(config, config_file)
+    yaml.safe_dump(config, config_file) # TODO: Order files by modified date and save this after each file processed
