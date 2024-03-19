@@ -27,11 +27,11 @@ parser.add_argument(
 )
 data_path = os.path.join(xdg_data_home(), "citations-ai", "data")
 parser.add_argument(
-    "-d",
+    "-p",
     "--data-path",
     type=str,
     default=data_path,
-    help="The path to persist the ChromaDB directory",
+    help="The path to the ChromaDB directory",
 )
 args = parser.parse_args()
 
