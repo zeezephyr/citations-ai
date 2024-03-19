@@ -15,7 +15,7 @@ The frontend can be run either from the command line or with a web interface by 
 
 ```
 python app.py --help
-usage: app.py [-h] [-q QUESTION] [-w] [-c COLLECTION] [-d DATA_PATH]
+usage: app.py [-h] [-q QUESTION] [-w] [-c COLLECTION] [-p DATA_PATH]
 
 Ask OpenAI a question
 
@@ -26,8 +26,8 @@ options:
   -w, --web             Start the web interface
   -c COLLECTION, --collection COLLECTION
                         The name of the vector collection
-  -d DATA_PATH, --data-path DATA_PATH
-                        The path to persist the ChromaDB directory
+  -p DATA_PATH, --data-path DATA_PATH
+                        The path to the ChromaDB directory
 ```
 
 ## Run the indexer
@@ -36,18 +36,17 @@ The indexer takes an archivebox data directory, scans it for htmltotext files, a
 
 ```
 python indexer.py --help
-usage: indexer.py [-h] [-c COLLECTION] [-d DATA_PATH] [-a AFTER] directory
+usage: indexer.py [-h] [-d DIRECTORY] [-c COLLECTION] [-p DATA_PATH] [-a AFTER]
 
 Scan an archivebox repository and store embeddings in chromadb
 
-positional arguments:
-  directory             The path to the archivebox data repository
-
 options:
   -h, --help            show this help message and exit
+  -d DIRECTORY, --directory DIRECTORY
+                        The path to the archivebox data repository
   -c COLLECTION, --collection COLLECTION
                         The name of the vector collection
-  -d DATA_PATH, --data-path DATA_PATH
+  -p DATA_PATH, --data-path DATA_PATH
                         The path to persist the ChromaDB directory
   -a AFTER, --after AFTER
                         Only process files modified after this date
