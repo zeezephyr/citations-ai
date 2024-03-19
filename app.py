@@ -9,19 +9,32 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_community.embeddings.sentence_transformer import (
-    SentenceTransformerEmbeddings
+    SentenceTransformerEmbeddings,
 )
 from langchain_community.vectorstores.chroma import Chroma
 from xdg_base_dirs import xdg_data_home
 
 load_dotenv()
 parser = argparse.ArgumentParser(description="Ask OpenAI a question")
-parser.add_argument("-q", "--question", type=str)
-parser.add_argument("-w", "--web", action="store_true")
-parser.add_argument("-c", "--collection", type=str, default="citations")
+parser.add_argument("-q", "--question", type=str, help="Specify a question to answer")
+parser.add_argument("-w", "--web", action="store_true", help="Start the web interface")
+parser.add_argument(
+    "-c",
+    "--collection",
+    type=str,
+    default="citations",
+    help="The name of the vector collection",
+)
 data_path = os.path.join(xdg_data_home(), "citations-ai", "data")
-parser.add_argument("-d", "--data-path", type=str, default=data_path)
+parser.add_argument(
+    "-d",
+    "--data-path",
+    type=str,
+    default=data_path,
+    help="The path to persist the ChromaDB directory",
+)
 args = parser.parse_args()
+
 
 def query(question):
 
@@ -35,21 +48,23 @@ def query(question):
     The question is: {question}
     """
 
-    client = PersistentClient(path=args.data_path, settings=Settings(anonymized_telemetry=False))
+    client = PersistentClient(
+        path=args.data_path, settings=Settings(anonymized_telemetry=False)
+    )
     embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
     # collection = client.get_collection(name=args.collection)
 
     vectorstore = Chroma(
         client=client,
         collection_name=args.collection,
-        embedding_function=embedding_function
+        embedding_function=embedding_function,
     )
 
     print("Running query")
 
     docs = vectorstore.similarity_search(question, k=3)
     prompt = ChatPromptTemplate.from_template(prompt)
-    model = ChatOpenAI(model="gpt-4", api_key=os.environ['OPEN_AI_API_KEY'])
+    model = ChatOpenAI(model="gpt-4", api_key=os.environ["OPEN_AI_API_KEY"])
     output_parser = StrOutputParser()
 
     chain = prompt | model | output_parser
@@ -58,13 +73,14 @@ def query(question):
 
     return result
 
+
 if args.question:
     result = query(args.question)
 
     print(result)
     # print(f"Additional references: {[d.metadata['website'] for d in docs]}")
 
-#TODO: Refactor to own module
+# TODO: Refactor to own module
 if args.web:
     if "messages" not in streamlit.session_state:
         streamlit.session_state["messages"] = []
@@ -85,4 +101,6 @@ if args.web:
             print(f"Web interface got question: {question}")
             result = query(question)
             response = streamlit.write(result)
-            streamlit.session_state.messages.append({"role": "assistant", "content": response})
+            streamlit.session_state.messages.append(
+                {"role": "assistant", "content": response}
+            )

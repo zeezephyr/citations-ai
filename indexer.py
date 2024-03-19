@@ -8,7 +8,7 @@ from chromadb import PersistentClient
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from langchain_community.embeddings.sentence_transformer import (
-    SentenceTransformerEmbeddings
+    SentenceTransformerEmbeddings,
 )
 from langchain_community.document_loaders import TextLoader
 from langchain_community.vectorstores.chroma import Chroma
@@ -33,35 +33,59 @@ with open(CONFIG_FILE_PATH, "r+") as config_file:
 parser = argparse.ArgumentParser(
     description="Scan an archivebox repository and store embeddings in chromadb"
 )
-parser.add_argument("directory", type=str)
-parser.add_argument("-c", "--collection", type=str, default="citations")
+parser.add_argument(
+    "-d",
+    "--directory",
+    type=str,
+    default=config['archivebox_directory'],
+    help="The path to the archivebox data repository",
+)
+parser.add_argument(
+    "-c",
+    "--collection",
+    type=str,
+    default="citations",
+    help="The name of the vector collection",
+)
 
 data_path = os.path.join(xdg_data_home(), "citations-ai", "data")
-parser.add_argument("-d", "--data-path", type=str, default=data_path)
+parser.add_argument(
+    "-p",
+    "--data-path",
+    type=str,
+    default=data_path,
+    help="The path to persist the ChromaDB directory",
+)
 
 if "last_scan_time" in config:
-    after = config['last_scan_time']
+    after = config["last_scan_time"]
 else:
     after = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-parser.add_argument("-a", "--after", default=after)
+parser.add_argument(
+    "-a", "--after", default=after, help="Only process files modified after this date"
+)
 
 args = parser.parse_args()
 
-client = PersistentClient(path=args.data_path, settings=Settings(anonymized_telemetry=False))
+client = PersistentClient(
+    path=args.data_path, settings=Settings(anonymized_telemetry=False)
+)
 embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 collection = client.get_or_create_collection(name=args.collection)
 
 vectorstore = Chroma(
     client=client,
     collection_name=args.collection,
-    embedding_function=embedding_function
+    embedding_function=embedding_function,
 )
 
 pathlist = Path(args.directory).rglob("htmltotext.txt")
 for file in pathlist:
     file_dir = os.path.dirname(file.resolve())
     index_file_path = os.path.join(file_dir, "index.json")
-    index_modified_time = datetime.fromtimestamp(os.path.getmtime(index_file_path), tz=timezone.utc)
+    index_modified_time = datetime.fromtimestamp(
+        os.path.getmtime(index_file_path), tz=timezone.utc
+    )
 
     if index_modified_time < args.after:
         continue
@@ -69,20 +93,24 @@ for file in pathlist:
     index_file = open(index_file_path, "r")
     index = json.load(index_file)
 
-    print(f'Processing {file}')
+    print(f"Processing {file}")
     raw_documents = TextLoader(str(file)).load()
-    text_splitter = SentenceTransformersTokenTextSplitter(chunk_overlap=50, model_name="all-MiniLM-L6-v2")
+    text_splitter = SentenceTransformersTokenTextSplitter(
+        chunk_overlap=50, model_name="all-MiniLM-L6-v2"
+    )
     documents = text_splitter.split_documents(raw_documents)
 
     for d in documents:
-        d.metadata['website'] = index['base_url']
-        d.metadata['domain'] = index['domain']
+        d.metadata["website"] = index["base_url"]
+        d.metadata["domain"] = index["domain"]
 
     try:
         vectorstore.add_documents(documents)
     except Exception as e:
-        print(f'Failed to process {file}\n', e)
+        print(f"Failed to process {file}\n", e)
 
-config['last_scan_time'] = START_TIME
-with open(CONFIG_FILE_PATH, "a+") as config_file:
-    yaml.safe_dump(config, config_file) # TODO: Order files by modified date and save this after each file processed
+config["last_scan_time"] = START_TIME
+with open(CONFIG_FILE_PATH, "w+") as config_file:
+    yaml.safe_dump(config, config_file)
+    # TODO: Order files by modified date and save this after each file processed
+    # TODO: Or, update last_scan_time on each file then try/except and store regardless
