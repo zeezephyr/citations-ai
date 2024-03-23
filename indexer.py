@@ -1,5 +1,4 @@
 import argparse
-import json
 import os
 import yaml
 
@@ -10,11 +9,11 @@ from dotenv import load_dotenv
 from langchain_community.embeddings.sentence_transformer import (
     SentenceTransformerEmbeddings,
 )
-from langchain_community.document_loaders import TextLoader
 from langchain_community.vectorstores.chroma import Chroma
-from langchain_text_splitters import SentenceTransformersTokenTextSplitter
 from pathlib import Path
 from xdg_base_dirs import xdg_data_home, xdg_state_home
+
+from scanners import ArchiveBoxScanner
 
 START_TIME = datetime.now(tz=timezone.utc)
 
@@ -33,13 +32,7 @@ with open(CONFIG_FILE_PATH, "r+") as config_file:
 parser = argparse.ArgumentParser(
     description="Scan an archivebox repository and store embeddings in chromadb"
 )
-parser.add_argument(
-    "-d",
-    "--directory",
-    type=str,
-    default=config['archivebox_directory'],
-    help="The path to the archivebox data repository",
-)
+
 parser.add_argument(
     "-c",
     "--collection",
@@ -56,16 +49,20 @@ parser.add_argument(
     default=data_path,
     help="The path to persist the ChromaDB directory",
 )
-
-if "last_scan_time" in config:
-    after = config["last_scan_time"]
-else:
-    after = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
 parser.add_argument(
-    "-a", "--after", default=after, help="Only process files modified after this date"
+    "-a",
+    "--after",
+    type=lambda d: datetime.strptime(d, "%Y-%m-%d %H:%M:%S%z"),
+    help="Only process files modified after this date",
 )
 
 args = parser.parse_args()
+
+# TODO: After is currently applied globally. May want to reconsider.
+if "last_scan_time" not in config:
+    config["last_scan_time"] = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+if args.after is not None:
+    config["last_scan_time"] = args["after"]
 
 client = PersistentClient(
     path=args.data_path, settings=Settings(anonymized_telemetry=False)
@@ -79,35 +76,18 @@ vectorstore = Chroma(
     embedding_function=embedding_function,
 )
 
-pathlist = Path(args.directory).rglob("htmltotext.txt")
-for file in pathlist:
-    file_dir = os.path.dirname(file.resolve())
-    index_file_path = os.path.join(file_dir, "index.json")
-    index_modified_time = datetime.fromtimestamp(
-        os.path.getmtime(index_file_path), tz=timezone.utc
-    )
-
-    if index_modified_time < args.after:
-        continue
-
-    index_file = open(index_file_path, "r")
-    index = json.load(index_file)
-
-    print(f"Processing {file}")
-    raw_documents = TextLoader(str(file)).load()
-    text_splitter = SentenceTransformersTokenTextSplitter(
-        chunk_overlap=50, model_name="all-MiniLM-L6-v2"
-    )
-    documents = text_splitter.split_documents(raw_documents)
-
-    for d in documents:
-        d.metadata["website"] = index["base_url"]
-        d.metadata["domain"] = index["domain"]
-
-    try:
-        vectorstore.add_documents(documents)
-    except Exception as e:
-        print(f"Failed to process {file}\n", e)
+for entry in config["data_dirs"]:
+    scanner = None
+    if entry["type"] == "archivebox":
+        scan_dir = Path(entry["directory"])
+        scanner = ArchiveBoxScanner(scan_dir, config)
+    
+    for documents in scanner.run():
+        try:
+            print(f"Processing file {file}\n")
+            vectorstore.add_documents(documents)
+        except Exception as e:
+            print(f"Failed to process {file}\n", e)
 
 config["last_scan_time"] = START_TIME
 with open(CONFIG_FILE_PATH, "w+") as config_file:
