@@ -1,19 +1,19 @@
 import argparse
 import os
-import yaml
-
-from chromadb.config import Settings
-from chromadb import PersistentClient
 from datetime import datetime, timezone
+from pathlib import Path
+
+import yaml
+from chromadb import PersistentClient
+from chromadb.config import Settings
 from dotenv import load_dotenv
 from langchain_community.embeddings.sentence_transformer import (
     SentenceTransformerEmbeddings,
 )
 from langchain_community.vectorstores.chroma import Chroma
-from pathlib import Path
 from xdg_base_dirs import xdg_data_home, xdg_state_home
 
-from scanners import ArchiveBoxScanner
+from scanners import ArchiveBoxScanner, MarkdownScanner
 
 START_TIME = datetime.now(tz=timezone.utc)
 
@@ -81,13 +81,19 @@ for entry in config["data_dirs"]:
     if entry["type"] == "archivebox":
         scan_dir = Path(entry["directory"])
         scanner = ArchiveBoxScanner(scan_dir, config)
-    
+    if entry["type"] == "markdown":
+        scan_dir = Path(entry["directory"])
+        domain = entry["domain"]
+        metadata = entry["metadata"]
+        scanner = MarkdownScanner(scan_dir, config, metadata, domain)
+
     for documents in scanner.run():
+        current_file = scanner.current_file
         try:
-            print(f"Processing file {file}\n")
+            print(f"Processing file {current_file}\n")
             vectorstore.add_documents(documents)
         except Exception as e:
-            print(f"Failed to process {file}\n", e)
+            print(f"Failed to process {current_file}\n", e)
 
 config["last_scan_time"] = START_TIME
 with open(CONFIG_FILE_PATH, "w+") as config_file:
