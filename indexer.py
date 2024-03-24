@@ -7,10 +7,6 @@ import yaml
 from chromadb import PersistentClient
 from chromadb.config import Settings
 from dotenv import load_dotenv
-from langchain_community.embeddings.sentence_transformer import (
-    SentenceTransformerEmbeddings,
-)
-from langchain_community.vectorstores.chroma import Chroma
 from xdg_base_dirs import xdg_data_home, xdg_state_home
 
 from scanners import ArchiveBoxScanner, MarkdownScanner
@@ -67,7 +63,6 @@ if args.after is not None:
 client = PersistentClient(
     path=args.data_path, settings=Settings(anonymized_telemetry=False)
 )
-embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 collection = client.get_or_create_collection(name=args.collection)
 
 for entry in config["data_dirs"]:
@@ -77,18 +72,18 @@ for entry in config["data_dirs"]:
         scanner = ArchiveBoxScanner(scan_dir, config)
     if entry["type"] == "markdown":
         scan_dir = Path(entry["directory"])
-        domain = entry["domain"]
+        # domain = entry["domain"]
         metadata = entry["metadata"]
-        scanner = MarkdownScanner(scan_dir, config, metadata, domain)
+        scanner = MarkdownScanner(scan_dir, config, metadata)
 
-    for documents, doc_ids in scanner.run():
+    for ids, documents, metadata in scanner.run():
         current_file = scanner.current_file
         try:
             print(f"Processing file {current_file}\n")
             collection.upsert(
-                ids=doc_ids,
-                metadatas=[d.metadata for d in documents],
-                documents=[d.page_content for d in documents],
+                ids=ids,
+                documents=documents,
+                metadatas=metadata,
             )
         except Exception as e:
             print(f"Failed to process {current_file}\n", e)

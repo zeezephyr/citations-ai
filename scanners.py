@@ -4,12 +4,6 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
 
-from langchain_community.document_loaders import TextLoader
-from langchain_text_splitters import (
-    MarkdownTextSplitter,
-    SentenceTransformersTokenTextSplitter,
-)
-
 
 class LocalScanner(ABC):
     def __init__(self, scan_dir: Path, config: dict):
@@ -54,27 +48,19 @@ class ArchiveBoxScanner(LocalScanner):
 
             index_file = open(index_file_path, "r")
             index_json = json.load(index_file)
+            ids = [index_json["hash"]]
+            documents = [file.read_text()]
+            metadata = [
+                {"website": index_json["base_url"], "domain": index_json["domain"]}
+            ]
 
-            raw_documents = TextLoader(str(file)).load()
-            text_splitter = SentenceTransformersTokenTextSplitter(
-                chunk_overlap=50, model_name="all-MiniLM-L6-v2"
-            )
-            documents = text_splitter.split_documents(raw_documents)
-            doc_ids = []
-
-            for idx, d in enumerate(documents):
-                doc_ids.append(f"{index_json["hash"]}-{idx}")
-                d.metadata["website"] = index_json["base_url"]
-                d.metadata["domain"] = index_json["domain"]
-
-            yield documents, doc_ids
+            yield ids, documents, metadata
 
 
 class MarkdownScanner(LocalScanner):
-    def __init__(self, scan_dir, config, metadata: str = None, domain: str = None):
+    def __init__(self, scan_dir, config, metadata):
         super().__init__(scan_dir, config)
         self._metadata = metadata
-        self._domain = domain
 
     def _list_files(self):
         return self._scan_dir.rglob("*.md")
@@ -90,16 +76,8 @@ class MarkdownScanner(LocalScanner):
             if file_modified_time < self._config["last_scan_time"]:
                 continue
 
-            raw_documents = TextLoader(str(file)).load()
-            text_splitter = MarkdownTextSplitter()
-            documents = text_splitter.split_documents(raw_documents)
-            doc_ids = []
+            ids = [str(self._current_file)]
+            documents = [file.read_text()]
+            metadata = [self._metadata]
 
-            for idx, d in enumerate(documents):
-                doc_ids.append(f"{file}-{idx}")
-                if self._domain is not None:
-                    d.metadata["domain"] = self._domain
-                if self._metadata is not None:
-                    d.metadata["source"] = self._metadata
-
-            yield documents, doc_ids
+            yield ids, documents, metadata
