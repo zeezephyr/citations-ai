@@ -70,12 +70,6 @@ client = PersistentClient(
 embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 collection = client.get_or_create_collection(name=args.collection)
 
-vectorstore = Chroma(
-    client=client,
-    collection_name=args.collection,
-    embedding_function=embedding_function,
-)
-
 for entry in config["data_dirs"]:
     scanner = None
     if entry["type"] == "archivebox":
@@ -87,11 +81,15 @@ for entry in config["data_dirs"]:
         metadata = entry["metadata"]
         scanner = MarkdownScanner(scan_dir, config, metadata, domain)
 
-    for documents in scanner.run():
+    for documents, doc_ids in scanner.run():
         current_file = scanner.current_file
         try:
             print(f"Processing file {current_file}\n")
-            vectorstore.add_documents(documents)
+            collection.upsert(
+                ids=doc_ids,
+                metadatas=[d.metadata for d in documents],
+                documents=[d.page_content for d in documents],
+            )
         except Exception as e:
             print(f"Failed to process {current_file}\n", e)
 

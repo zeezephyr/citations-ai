@@ -53,19 +53,21 @@ class ArchiveBoxScanner(LocalScanner):
                 continue
 
             index_file = open(index_file_path, "r")
-            index = json.load(index_file)
+            index_json = json.load(index_file)
 
             raw_documents = TextLoader(str(file)).load()
             text_splitter = SentenceTransformersTokenTextSplitter(
                 chunk_overlap=50, model_name="all-MiniLM-L6-v2"
             )
             documents = text_splitter.split_documents(raw_documents)
+            doc_ids = []
 
-            for d in documents:
-                d.metadata["website"] = index["base_url"]
-                d.metadata["domain"] = index["domain"]
+            for idx, d in enumerate(documents):
+                doc_ids.append(f"{index_json["hash"]}-{idx}")
+                d.metadata["website"] = index_json["base_url"]
+                d.metadata["domain"] = index_json["domain"]
 
-            yield documents
+            yield documents, doc_ids
 
 
 class MarkdownScanner(LocalScanner):
@@ -91,11 +93,13 @@ class MarkdownScanner(LocalScanner):
             raw_documents = TextLoader(str(file)).load()
             text_splitter = MarkdownTextSplitter()
             documents = text_splitter.split_documents(raw_documents)
+            doc_ids = []
 
-            for d in documents:
+            for idx, d in enumerate(documents):
+                doc_ids.append(f"{file}-{idx}")
                 if self._domain is not None:
                     d.metadata["domain"] = self._domain
                 if self._metadata is not None:
                     d.metadata["source"] = self._metadata
 
-            yield documents
+            yield documents, doc_ids
