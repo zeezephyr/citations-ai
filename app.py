@@ -1,17 +1,14 @@
 import argparse
 import os
-import streamlit
+import pprint
 
+import streamlit
 from chromadb import PersistentClient
 from chromadb.config import Settings
 from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from langchain_community.embeddings.sentence_transformer import (
-    SentenceTransformerEmbeddings,
-)
-from langchain_community.vectorstores.chroma import Chroma
 from xdg_base_dirs import xdg_data_home
 
 load_dotenv()
@@ -33,6 +30,12 @@ parser.add_argument(
     default=data_path,
     help="The path to the ChromaDB directory",
 )
+parser.add_argument(
+    "-e",
+    "--embeddings-only",
+    action="store_true",
+    help="Return embeddings only. Do not query the LLM.",
+)
 args = parser.parse_args()
 
 
@@ -51,33 +54,29 @@ def query(question):
     client = PersistentClient(
         path=args.data_path, settings=Settings(anonymized_telemetry=False)
     )
-    embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
-    # collection = client.get_collection(name=args.collection)
+    collection = client.get_collection(args.collection)
 
-    vectorstore = Chroma(
-        client=client,
-        collection_name=args.collection,
-        embedding_function=embedding_function,
-    )
+    docs = collection.query(query_texts=question, n_results=3)
+    if args.embeddings_only:
+        return docs
 
     print("Running query")
-
-    docs = vectorstore.similarity_search(question, k=3)
     prompt = ChatPromptTemplate.from_template(prompt)
-    model = ChatOpenAI(model="gpt-4", api_key=os.environ["OPEN_AI_API_KEY"])
+    model = ChatOpenAI(
+        model="gpt-4-turbo-preview", api_key=os.environ["OPEN_AI_API_KEY"]
+    )
     output_parser = StrOutputParser()
 
     chain = prompt | model | output_parser
 
-    result = chain.invoke({"question": question, "docs": docs})
+    result = chain.invoke({"question": question, "docs": docs["documents"]})
 
     return result
 
 
 if args.question:
     result = query(args.question)
-
-    print(result)
+    pprint.pp(result)
     # print(f"Additional references: {[d.metadata['website'] for d in docs]}")
 
 # TODO: Refactor to own module
@@ -85,12 +84,13 @@ if args.web:
     if "messages" not in streamlit.session_state:
         streamlit.session_state["messages"] = []
 
+    if len(streamlit.session_state["messages"]) < 1:
+        with streamlit.chat_message("assistant"):
+            streamlit.write("Do you have a question?")
+
     for message in streamlit.session_state.messages:
         with streamlit.chat_message(message["role"]):
             streamlit.markdown(message["content"])
-
-    with streamlit.chat_message("assistant"):
-        streamlit.write("Do you have a question?")
 
     if question := streamlit.chat_input("Ask a question"):
         streamlit.session_state.messages.append({"role": "user", "content": question})
@@ -102,5 +102,5 @@ if args.web:
             result = query(question)
             response = streamlit.write(result)
             streamlit.session_state.messages.append(
-                {"role": "assistant", "content": response}
+                {"role": "assistant", "content": result}
             )
