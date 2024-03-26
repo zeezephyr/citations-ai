@@ -4,6 +4,9 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
 
+import semchunk
+import tiktoken
+
 
 class LocalScanner(ABC):
     def __init__(self, scan_dir: Path, config: dict):
@@ -20,6 +23,10 @@ class LocalScanner(ABC):
     @abstractmethod
     def run(self):
         pass
+
+    def _token_counter(self, text):
+        encoder = tiktoken.encoding_for_model("gpt-4")
+        return len(encoder.encode(text))
 
     @property
     def current_file(self):
@@ -48,13 +55,17 @@ class ArchiveBoxScanner(LocalScanner):
 
             index_file = open(index_file_path, "r")
             index_json = json.load(index_file)
-            ids = [index_json["hash"]]
-            documents = [file.read_text()]
-            metadata = [
-                {"website": index_json["base_url"], "domain": index_json["domain"]}
-            ]
+            
+            documents = semchunk.chunk(
+                file.read_text(), chunk_size=256, token_counter=self._token_counter
+            )
+            ids = [f"{index_json["hash"]}-{i}" for (i, doc) in enumerate(documents)]
+            metadata = [{"website": index_json["base_url"], 
+                         "domain": index_json["domain"]} 
+                         for doc in enumerate(documents)]
 
             yield ids, documents, metadata
+
 
 
 class MarkdownScanner(LocalScanner):
@@ -67,6 +78,7 @@ class MarkdownScanner(LocalScanner):
 
     def run(self):
         pathlist = self._list_files()
+
         for file in pathlist:
             self._current_file = file
             file_modified_time = datetime.fromtimestamp(
@@ -76,8 +88,10 @@ class MarkdownScanner(LocalScanner):
             if file_modified_time < self._config["last_scan_time"]:
                 continue
 
-            ids = [str(self._current_file)]
-            documents = [file.read_text()]
-            metadata = [self._metadata]
+            documents = semchunk.chunk(
+                file.read_text(), chunk_size=256, token_counter=self._token_counter
+            )
+            ids = [f"{self.current_file}-{i}" for (i, doc) in enumerate(documents)]
+            metadata = [self._metadata for doc in enumerate(documents)]
 
             yield ids, documents, metadata
